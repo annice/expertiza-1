@@ -7,56 +7,26 @@ class StudentTaskController < ApplicationController
     end
     @participants = AssignmentParticipant.find_all_by_user_id(session[:user].id, :order => "parent_id DESC")
 
-     ########Tasks and Notifications##################
+    ########Tasks and Notifications##################
     @tasknotstarted = Array.new
     @taskrevisions = Array.new
     @notifications = Array.new
 
-     for participant in @participants
+    for participant in @participants
       stage = participant.assignment.get_current_stage(participant.topic_id)
       duedate = participant.assignment.get_stage_deadline(participant.topic_id)
 
 
       if participant.assignment != nil and
-              duedate != "Complete"
+          duedate != "Complete"
 
 
         if stage == "submission" or stage == "resubmission"
 
-          current_folder = DisplayOption.new
-          current_folder.name = ""
-
-          urls = participant.get_hyperlinks
-          if  (participant.resubmission_times.size >0) or (!urls.empty?)
-            @taskrevisions << participant
-          else
-            @tasknotstarted << participant
-          end
+              task_stage_submission(participant)
         elsif  stage == "review" or stage == "rereview"
 
-          #Checking the notifications
-          rmaps = ParticipantReviewResponseMap.find_all_by_reviewee_id_and_reviewed_object_id(participant.id, participant.assignment.id)
-
-          for rmap in rmaps
-            if (!rmap.response.nil? && rmap.notification_accepted == false)
-              @notifications << participant
-              break;
-            end
-          end
-          ############
-
-          if participant.assignment.team_assignment
-            maps = TeamReviewResponseMap.find_all_by_reviewer_id(participant.id)
-          else
-            maps = ParticipantReviewResponseMap.find_all_by_reviewer_id(participant.id)
-          end
-          rev = !(maps.size == 0)
-          for map in maps
-            if !map.response
-              rev = false
-              break
-            end
-          end
+          rev= task_stage_review(participant)
           if rev
             @taskrevisions << participant
           else
@@ -65,20 +35,7 @@ class StudentTaskController < ApplicationController
         elsif stage == "metareview"
 
           #Checking metareview notifications
-          rmaps = ParticipantReviewResponseMap.find_all_by_reviewer_id_and_reviewed_object_id(participant.id, participant.parent_id)
-          for rmap in rmaps
-            mmaps = MetareviewResponseMap.find_all_by_reviewee_id_and_reviewed_object_id(rmap.reviewer_id, rmap.id)
-            if !mmaps.nil?
-              for mmap in mmaps
-                if mmap.notification_accepted == false
-                  @notifications << participant
-                  break
-                end
-              end
-
-            end
-
-          end
+          task_stage_metareview(participant)
           ##################
 
 
@@ -106,8 +63,8 @@ class StudentTaskController < ApplicationController
   def view
     @participant = AssignmentParticipant.find(params[:id])
     return unless current_user_id?(@participant.user_id)
-    
-    @assignment = @participant.assignment    
+
+    @assignment = @participant.assignment
     @can_provide_suggestions = Assignment.find(@assignment.id).allow_suggestions
     @reviewee_topic_id = nil
     #Even if one of the reviewee's work is ready for review "Other's work" link should be active
@@ -139,7 +96,7 @@ class StudentTaskController < ApplicationController
   def others_work
     @participant = AssignmentParticipant.find(params[:id])
     return unless current_user_id?(@participant.user_id)
-    
+
     @assignment = @participant.assignment
     # Finding the current phase that we are in
     due_dates = DueDate.find(:all, :conditions => ["assignment_id = ?", @assignment.id])
@@ -164,7 +121,131 @@ class StudentTaskController < ApplicationController
     @review_of_review_mappings = MetareviewResponseMap.find_all_by_reviewer_id(@participant.id)
   end
 
-  def your_work
+  #This function manages the redirection on clicking on the tasks not yet started   depending on the task stage
+  def tasks_not_yet_started
 
+    participant=AssignmentParticipant.find(params[:id])
+    stage=params[:stage]
+    duedate=params[:duedate]
+    id = participant.id
+    controller = ""
+    action = ""
+    if stage == "submission"
+      controller = "submitted_content"
+      action = "edit"
+
+      # check if the assignment has a sign-up sheet
+      if SignUpTopic.find_by_assignment_id(participant.assignment.id)
+        selected_topics = nil
+
+        if participant.assignment.team_assignment == true
+          # get the user's team and check if they have signed up for a topic yet
+          users_team = SignedUpUser.find_team_users(participant.assignment.id,participant.user.id)
+          if users_team.size > 0
+            selected_topics = SignedUpUser.find_user_signup_topics(participant.assignment.id,users_team[0].t_id)
+          end
+        else
+          # check if the user has signed up for a topic yet
+          selected_topics = SignedUpUser.find_user_signup_topics(participant.assignment.id,participant.user.id)
+        end
+
+        if selected_topics.nil? || selected_topics.length == 0
+          # there is a signup sheet and user/team hasn't signed up yet, produce a link to do so
+          controller = "sign_up_sheet"
+          action = "signup_topics"
+          id = participant.parent_id
+          stage = "signup"
+        end
+      end
+    elsif stage == "resubmission"
+      controller = "submitted_content"
+      action = "edit"
+    elsif stage == "review" or stage == "rereview" or stage == "metareview"
+      controller = "student_review"
+      action = "list"
+    end
+    redirect_to :controller => controller, :action => action, :id=>id
+  end
+end
+
+#This function manages the redirection on clicking on the tasks in revision   depending on the task stage
+
+  def tasks_in_revision
+
+    participant=AssignmentParticipant.find(params[:id])
+    stage=params[:stage]
+    duedate=params[:duedate]
+    id = participant.id
+    controller = ""
+    action = ""
+    if stage == "submission" or stage == "resubmission"
+      controller = "submitted_content"
+      action = "edit"
+    elsif stage == "review" or stage == "rereview" or stage == "metareview"
+      controller = "student_review"
+      action = "list"
+    end
+    redirect_to :controller => controller, :action => action, :id=>id
+  end
+
+
+# Decides whether to display the tasks in revision stage as part of 'tasks not yet started' or 'tasks in revision'
+
+def task_stage_review(participant)
+  #Checking the notifications
+  rmaps = ParticipantReviewResponseMap.find_all_by_reviewee_id_and_reviewed_object_id(participant.id, participant.assignment.id)
+
+  for rmap in rmaps
+    if (!rmap.response.nil? && rmap.notification_accepted == false)
+      @notifications << participant
+      break;
+    end
+  end
+  ############
+
+  if participant.assignment.team_assignment
+    maps = TeamReviewResponseMap.find_all_by_reviewer_id(participant.id)
+  else
+    maps = ParticipantReviewResponseMap.find_all_by_reviewer_id(participant.id)
+  end
+  rev = !(maps.size == 0)
+  for map in maps
+    if !map.response
+      rev = false
+      break
+    end
+  end
+
+  return rev
+end
+
+# Decides whether to display the tasks in metareview stage as part of 'tasks not yet started' or 'tasks in revision'
+def task_stage_metareview(participant)
+  rmaps = ParticipantReviewResponseMap.find_all_by_reviewer_id_and_reviewed_object_id(participant.id, participant.parent_id)
+  for rmap in rmaps
+    mmaps = MetareviewResponseMap.find_all_by_reviewee_id_and_reviewed_object_id(rmap.reviewer_id, rmap.id)
+    if !mmaps.nil?
+      for mmap in mmaps
+        if mmap.notification_accepted == false
+          @notifications << participant
+          break
+        end
+      end
+
+    end
+
+  end
+end
+
+# Decides whether to display the tasks in submission stage as part of 'tasks not yet started' or 'tasks in revision'
+def task_stage_submission(participant)
+  current_folder = DisplayOption.new
+  current_folder.name = ""
+
+  urls = participant.get_hyperlinks
+  if  (participant.resubmission_times.size >0) or (!urls.empty?)
+    @taskrevisions << participant
+  else
+    @tasknotstarted << participant
   end
 end
