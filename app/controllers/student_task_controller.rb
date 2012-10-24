@@ -93,6 +93,27 @@ class StudentTaskController < ApplicationController
     end
   end
 
+
+  #This function manages the redirection on clicking on the tasks in revision   depending on the task stage
+
+  def tasks_to_be_revised
+
+    participant=AssignmentParticipant.find(params[:id])
+    stage=params[:stage]
+    duedate=params[:duedate]
+    id = participant.id
+    controller = ""
+    action = ""
+    if stage == "submission" or stage == "resubmission"
+      controller = "submitted_content"
+      action = "edit"
+    elsif stage == "review" or stage == "rereview" or stage == "metareview"
+      controller = "student_review"
+      action = "list"
+    end
+    redirect_to :controller => controller, :action => action, :id=>id
+  end
+
   def others_work
     @participant = AssignmentParticipant.find(params[:id])
     return unless current_user_id?(@participant.user_id)
@@ -168,25 +189,6 @@ class StudentTaskController < ApplicationController
   end
 end
 
-#This function manages the redirection on clicking on the tasks in revision   depending on the task stage
-
-  def tasks_in_revision
-
-    participant=AssignmentParticipant.find(params[:id])
-    stage=params[:stage]
-    duedate=params[:duedate]
-    id = participant.id
-    controller = ""
-    action = ""
-    if stage == "submission" or stage == "resubmission"
-      controller = "submitted_content"
-      action = "edit"
-    elsif stage == "review" or stage == "rereview" or stage == "metareview"
-      controller = "student_review"
-      action = "list"
-    end
-    redirect_to :controller => controller, :action => action, :id=>id
-  end
 
 
 # Decides whether to display the tasks in revision stage as part of 'tasks not yet started' or 'tasks in revision'
