@@ -32,7 +32,7 @@
     %>
 
      <span>&nbsp; &raquo; <%= link_to participant.assignment.name + " " +
-                                              stage, :controller => "student_task", :action => "tasks_in_revision", :id =>id,:stage=>stage,:duedate=>duedate %> (<%=
+                                              stage, :controller => "student_task", :action => "tasks_to_be_revised", :id =>id,:stage=>stage,:duedate=>duedate %> (<%=
          time_ago_in_words(duedate) %> left) </span><br/>
 
     <% end %>
